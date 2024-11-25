@@ -25,11 +25,10 @@ void double_sha256(unsigned char *input, size_t len, uint8_t output[32]) {
 
 void make_hash(uint8_t block_header[80]) {
     unsigned char block_hash[32];
-    char hex_output[32 * 2];
-
     double_sha256(block_header, 80, block_hash);
 
     // Output the hash as a hexadecimal string
+    char hex_output[32 * 2];
     to_hex_string(block_hash, hex_output, 32);
     printf("Result Hash: %s\n", hex_output);
 }
