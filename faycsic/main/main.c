@@ -116,12 +116,8 @@ static void echo_task(void *arg) {
 
             prettyHex((unsigned char *)block_header, data_len);
             printf("\n");
-
-            unsigned char hash[32];
-            char hex_output[32 * 2 + 1];
-            double_sha256((unsigned char *)block_header, sizeof(block_header), hash);
-            prettyHex(hash, 256);
-            printf("\n");
+            
+            hash(block_header);
            
         }
 
