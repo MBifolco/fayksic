@@ -5,7 +5,7 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
-
+#include "hash.h"
 #define UART_NUM UART_NUM_1       // Use UART1
 #define BUF_SIZE 2048             // Buffer size for incoming data
 #define RX_PIN 12                 // GPIO pin for UART RX
@@ -40,7 +40,7 @@
 #define FAST_UART_CONFIGURATION 0x28
 #define TICKET_MASK 0x14
 #define MISC_CONTROL 0x18
-
+#define LENGTH 0
 void prettyHex(unsigned char *buf, int len)
 {
     int i;
@@ -68,7 +68,7 @@ static void echo_task(void *arg) {
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_LOGI("main", "UART configured");
 
-    char *data = (unsigned char *) malloc(BUF_SIZE);
+    char *data = (char *) malloc(BUF_SIZE);
 
     while (1) {
         // Read data from the UART
@@ -92,16 +92,32 @@ static void echo_task(void *arg) {
                 ESP_LOGI("PARSE", "Preamble OK");
             }
 
-            // Extract header and length
-            printf("%02X ", (unsigned char *)data[2]);
-            //prettyHex((unsigned char *)data[2], 1);
-            //prettyHex((unsigned char *)data[3], 1);
-            //ESP_LOGW("PARSE", "Incomplete packet: expected %d bytes, got %d", length, len);
-            // Validate length
-            //if (len < length) {
-            //    ESP_LOGW("PARSE", "Incomplete packet: expected %d bytes, got %d", length, len);
-            //    return;
-            //}
+            unsigned char header = data[2];
+            ESP_LOGI("PARSE", "header: %02X", (unsigned char)header);
+
+            if (header == 0x21) {
+                ESP_LOGI("PARSE", "Job packet");
+            
+            } else {
+                ESP_LOGW("PARSE", "Unknown packet type");
+                return;
+            }
+
+            unsigned char length = data[3];
+            ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
+
+            int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
+            //ESP_LOGI("PARSE", "data_len: %d", data_len);
+            char *payload = &data[4];
+            prettyHex((unsigned char *)payload, length);
+            printf("\n");
+
+            unsigned char hash[32];
+            char hex_output[32 * 2 + 1];
+            double_sha256((unsigned char *)payload, sizeof(payload), hash);
+            prettyHex(hash, 256);
+            printf("\n");
+           
         }
 
        
