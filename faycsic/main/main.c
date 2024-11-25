@@ -41,6 +41,7 @@
 #define TICKET_MASK 0x14
 #define MISC_CONTROL 0x18
 #define LENGTH 0
+
 void prettyHex(unsigned char *buf, int len)
 {
     int i;
@@ -108,27 +109,14 @@ static void echo_task(void *arg) {
             }
 
             unsigned char length = data[3];
-            ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
 
             int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
-            ESP_LOGI("PARSE", "data_len: %d", data_len);
 
             unsigned char *block_header = (uint8_t *)malloc(data_len);
             memcpy(block_header, data + 4, data_len);
 
-            prettyHex((unsigned char *)block_header, data_len);
-            printf("\n");
-            
-            //char block_header_str[160];
-            //toHexString(block_header, block_header_str, 80);
-            //printf("Result block header: %s\n", block_header_str);
-
-
-            //hash(block_header);
-           
+            make_hash(block_header);
         }
-
-       
     }
 }
 
