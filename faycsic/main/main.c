@@ -52,6 +52,8 @@ void prettyHex(unsigned char *buf, int len)
     printf("%02X]", buf[len - 1]);
 }
 
+
+
 static void echo_task(void *arg) {
    
 
@@ -75,7 +77,7 @@ static void echo_task(void *arg) {
         int len = uart_read_bytes(UART_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
 
         if (len) {
-            printf("tx: ");
+            printf("entier message: ");
             prettyHex((unsigned char *)data, len);
             printf("\n");
 
@@ -107,14 +109,17 @@ static void echo_task(void *arg) {
             ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
 
             int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
-            //ESP_LOGI("PARSE", "data_len: %d", data_len);
-            char *payload = &data[4];
-            prettyHex((unsigned char *)payload, length);
+            ESP_LOGI("PARSE", "data_len: %d", data_len);
+
+            unsigned char *block_header = (uint8_t *)malloc(data_len);
+            memcpy(block_header, data + 4, data_len);
+
+            prettyHex((unsigned char *)block_header, data_len);
             printf("\n");
 
             unsigned char hash[32];
             char hex_output[32 * 2 + 1];
-            double_sha256((unsigned char *)payload, sizeof(payload), hash);
+            double_sha256((unsigned char *)block_header, sizeof(block_header), hash);
             prettyHex(hash, 256);
             printf("\n");
            
