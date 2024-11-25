@@ -77,8 +77,10 @@ static void echo_task(void *arg) {
         int len = uart_read_bytes(UART_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
 
         if (len) {
-            printf("entier message: ");
+            printf("message: ");
             prettyHex((unsigned char *)data, len);
+
+            
             printf("\n");
 
             if (len < 4) {
@@ -117,7 +119,12 @@ static void echo_task(void *arg) {
             prettyHex((unsigned char *)block_header, data_len);
             printf("\n");
             
-            hash(block_header);
+            //char block_header_str[160];
+            //toHexString(block_header, block_header_str, 80);
+            //printf("Result block header: %s\n", block_header_str);
+
+
+            //hash(block_header);
            
         }
 

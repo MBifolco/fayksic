@@ -12,5 +12,6 @@
 void to_hex(unsigned char *hash, char output[]);
 void double_sha256(unsigned char *input, size_t len, uint8_t output[32]);
 int hash();
+void toHexString(unsigned char *input, char output[], int len);
 
 #endif // SHA256_H
