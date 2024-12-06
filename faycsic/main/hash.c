@@ -6,9 +6,9 @@
 
 
 // Convert a byte array to a hex string for readability (optional)
-void to_hex(unsigned char *hash, char output[]) {
-    for (int i = 0; i < 32; i++) {
-        sprintf(output + (i * 2), "%02x", hash[i]);
+void to_hex_string(unsigned char *input, char *output, int len) {
+    for (int i = 0; i < len; i++) {
+        sprintf(output + (i * 2), "%02x", input[i]);
     }
 }
 
@@ -16,32 +16,19 @@ void to_hex(unsigned char *hash, char output[]) {
 void double_sha256(unsigned char *input, size_t len, uint8_t output[32]) {
     unsigned char temp[32];
 
-    mbedtls_sha256(input, strlen((const char *)input), temp,0);
-    mbedtls_sha256(temp, strlen((const char *)temp), output,0);
+    // First SHA-256 hash
+    mbedtls_sha256(input, len, temp, 0);
+
+    // Second SHA-256 hash
+    mbedtls_sha256(temp, 32, output, 0);
 }
 
-int hash(unsigned char target[32], uint8_t block_header[80]) {
-    char target_output[32 * 2 + 1];
-    to_hex(target, target_output);
-    printf("Target:      %s\n\n", target_output);
+void make_hash(uint8_t block_header[80]) {
+    unsigned char block_hash[32];
+    double_sha256(block_header, 80, block_hash);
 
-    unsigned char hash[32];
-    char hex_output[32 * 2 + 1];
-    for (int i = 0; i < 10; i++) {
-        block_header[0] = i;
-        double_sha256(block_header, sizeof(block_header), hash);
-
-        // Output the hash as a hexadecimal string
-        to_hex(hash, hex_output);
-        printf("Result Hash: %s\n", hex_output);
-
-        if (memcmp(hash, target, 32) < 0) {
-            printf("\nBlock header satisfies the difficulty target!\n");
-            break;
-        } else {
-            printf("Keep hashing...\n");
-        }
-    }
-
-    return 0;
+    // Output the hash as a hexadecimal string
+    char hex_output[32 * 2];
+    to_hex_string(block_hash, hex_output, 32);
+    printf("Result Hash: %s\n", hex_output);
 }
