@@ -9,3 +9,5 @@
 void double_sha256(unsigned char *input, size_t len, uint8_t output[32]);
 void make_hash(uint8_t block_header[80]);
 void to_hex_string(unsigned char *input, char *output, int len);
+uint32_t mine_block(uint8_t block_header[80], const uint8_t target[32]);
+int is_valid_hash(const uint8_t hash[32], const uint8_t target[32]);
