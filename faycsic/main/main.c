@@ -1,11 +1,20 @@
 #include <stdio.h>
+#include <stdint.h>
+#include "esp_log.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <freertos/queue.h>
+
 #include "driver/uart.h"
 #include "driver/gpio.h"
+
 #include "sdkconfig.h"
-#include "esp_log.h"
+
 #include "hash.h"
+
+
+
 #define UART_NUM UART_NUM_1       // Use UART1
 #define BUF_SIZE 2048             // Buffer size for incoming data
 #define RX_PIN 12                 // GPIO pin for UART RX
@@ -53,7 +62,7 @@ void prettyHex(unsigned char *buf, int len)
     printf("%02X]", buf[len - 1]);
 }
 
-
+static const char *TAG = "MAIN";
 
 static void echo_task(void *arg) {
    
@@ -78,6 +87,7 @@ static void echo_task(void *arg) {
         int len = uart_read_bytes(UART_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
 
         if (len) {
+            printf("Received %d bytes\n", len);
             printf("message: ");
             prettyHex((unsigned char *)data, len);
 
@@ -102,20 +112,25 @@ static void echo_task(void *arg) {
 
             if (header == 0x21) {
                 ESP_LOGI("PARSE", "Job packet");
-            
+                unsigned char length = data[3];
+
+                int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
+
+                unsigned char *block_header = (uint8_t *)malloc(data_len);
+                memcpy(block_header, data + 4, data_len);
+
+                printf("block header: ");
+                prettyHex((unsigned char *)block_header, 81);
+
+                make_hash(block_header);
+            }else if (header == 0x51) {
+                ESP_LOGI("PARSE", "Command packet");
             } else {
                 ESP_LOGW("PARSE", "Unknown packet type");
                 return;
             }
 
-            unsigned char length = data[3];
-
-            int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
-
-            unsigned char *block_header = (uint8_t *)malloc(data_len);
-            memcpy(block_header, data + 4, data_len);
-
-            make_hash(block_header);
+            
         }
     }
 }
@@ -124,4 +139,35 @@ void app_main(void)
 {
     ESP_LOGI("main", "Hello, world!");
     xTaskCreate(echo_task, "uart_echo_task", 2048, NULL, 10, NULL);
+}
+
+// Function to reverse the bits of an 8-bit unsigned char
+unsigned char _reverse_bits(unsigned char byte) {
+    byte = ((byte & 0xF0) >> 4) | ((byte & 0x0F) << 4);    // Swap nibbles
+    byte = ((byte & 0xCC) >> 2) | ((byte & 0x33) << 2);    // Swap pairs of bits
+    byte = ((byte & 0xAA) >> 1) | ((byte & 0x55) << 1);    // Swap individual bits
+    return byte;
+}
+
+void parse_job_difficulty_mask(const unsigned char *payload) {
+    // Assuming payload starts after the preamble and command header
+    const unsigned char *job_difficulty_mask = payload;
+
+    // Verify the mask length
+    if (job_difficulty_mask == NULL) {
+        ESP_LOGE(TAG, "Invalid payload: NULL job difficulty mask");
+        return;
+    }
+
+    // Extract and reconstruct the difficulty value
+    uint32_t difficulty = 0;
+    for (int i = 0; i < 4; i++) {
+        unsigned char reversed_byte = _reverse_bits(job_difficulty_mask[5 - i]);
+        difficulty |= (reversed_byte << (8 * i));
+    }
+
+    // Log the parsed difficulty
+    ESP_LOGI(TAG, "Parsed job difficulty mask: %lu", difficulty);
+
+    // Additional validation or processing if needed
 }
