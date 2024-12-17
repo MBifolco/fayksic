@@ -61,6 +61,13 @@ void prettyHex(unsigned char *buf, int len)
     }
     printf("%02X]", buf[len - 1]);
 }
+// Function to reverse the bits of an 8-bit unsigned char
+unsigned char _reverse_bits(unsigned char byte) {
+    byte = ((byte & 0xF0) >> 4) | ((byte & 0x0F) << 4);    // Swap nibbles
+    byte = ((byte & 0xCC) >> 2) | ((byte & 0x33) << 2);    // Swap pairs of bits
+    byte = ((byte & 0xAA) >> 1) | ((byte & 0x55) << 1);    // Swap individual bits
+    return byte;
+}
 
 static const char *TAG = "MAIN";
 
@@ -113,18 +120,69 @@ static void echo_task(void *arg) {
             if (header == 0x21) {
                 ESP_LOGI("PARSE", "Job packet");
                 unsigned char length = data[3];
+                ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
 
-                int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
+                int data_len = length - 6;
+                ESP_LOGI("PARSE", "data_len: %d", data_len);
+
+                int work_id = data[4];
+                ESP_LOGI("PARSE", "work_id: %02X", (unsigned char)work_id);
+
+                int num_midstates = data[5];
+                ESP_LOGI("PARSE", "num_midstates: %02X", (unsigned char)num_midstates);
 
                 unsigned char *block_header = (uint8_t *)malloc(data_len);
-                memcpy(block_header, data + 4, data_len);
+                memcpy(block_header, data + 6, data_len);
 
                 printf("block header: ");
-                prettyHex((unsigned char *)block_header, 81);
+                prettyHex((unsigned char *)block_header, 80);
 
                 make_hash(block_header);
             }else if (header == 0x51) {
                 ESP_LOGI("PARSE", "Command packet");
+
+                // Extract length and data
+                unsigned char length = data[3];
+                ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
+
+                int data_len = length - 5;  // Account for CRC5
+                ESP_LOGI("PARSE", "data_len: %d", data_len);
+
+                // Handle CRC5 (last byte)
+                uint8_t received_crc5 = data[4 + data_len];
+                ESP_LOGI("PARSE", "Received CRC5: %02X", received_crc5);
+
+                // Extract the message mask (last 6 bytes before CRC5)
+                unsigned char *message = (unsigned char *)(data + length - 5);
+                ESP_LOGI("Mask: ");
+                prettyHex(message, 6);
+
+                // Extract the padding byte and TICKET_MASK (last two bytes after the difficulty mask)
+                unsigned char padding_byte = message[0];
+                unsigned char mask = message[1];
+                ESP_LOGI("PARSE", "Padding byte: %02X", padding_byte);
+                ESP_LOGI("PARSE", "MASK: %02X", mask);
+
+                if (mask == TICKET_MASK) {
+                    ESP_LOGI("PARSE", "this is a set difficulty command");
+                    // Decode the difficulty value from the mask
+                    uint32_t decoded_difficulty = 0;
+                    for (int i = 0; i < 4; i++) {
+                        unsigned char value = message[5 - i];  // Reverse byte order
+                        decoded_difficulty |= (_reverse_bits(value) << (8 * i));
+                    }
+
+                    // Log the decoded difficulty
+                    ESP_LOGI("PARSE", "Decoded difficulty: %lu", decoded_difficulty);
+                } else {
+                    ESP_LOGW("PARSE", "Unknown mask");
+                    return;
+                }
+
+                
+
+            // Use the decoded difficulty value
+            // You can process the difficulty or take further actions here
             } else {
                 ESP_LOGW("PARSE", "Unknown packet type");
                 return;
@@ -141,13 +199,7 @@ void app_main(void)
     xTaskCreate(echo_task, "uart_echo_task", 2048, NULL, 10, NULL);
 }
 
-// Function to reverse the bits of an 8-bit unsigned char
-unsigned char _reverse_bits(unsigned char byte) {
-    byte = ((byte & 0xF0) >> 4) | ((byte & 0x0F) << 4);    // Swap nibbles
-    byte = ((byte & 0xCC) >> 2) | ((byte & 0x33) << 2);    // Swap pairs of bits
-    byte = ((byte & 0xAA) >> 1) | ((byte & 0x55) << 1);    // Swap individual bits
-    return byte;
-}
+
 
 void parse_job_difficulty_mask(const unsigned char *payload) {
     // Assuming payload starts after the preamble and command header

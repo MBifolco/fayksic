@@ -35,7 +35,7 @@ void make_hash(uint8_t block_header[80]) {
 
     double_sha256(block_header, 80, block_hash);
 
-    char *hex_output = malloc(32 * 2 + 1);  // +1 for null terminator
+    char *hex_output = malloc(32 * 2);  // +1 for null terminator
     if (!hex_output) {
         ESP_LOGE(TAG, "Failed to allocate memory for hex_output");
         free(block_hash);
