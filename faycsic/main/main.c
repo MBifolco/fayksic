@@ -1,11 +1,20 @@
 #include <stdio.h>
+#include <stdint.h>
+#include "esp_log.h"
+#include "globals.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <freertos/queue.h>
+
 #include "driver/uart.h"
 #include "driver/gpio.h"
+
 #include "sdkconfig.h"
-#include "esp_log.h"
+
 #include "hash.h"
+
+
+
 #define UART_NUM UART_NUM_1       // Use UART1
 #define BUF_SIZE 2048             // Buffer size for incoming data
 #define RX_PIN 12                 // GPIO pin for UART RX
@@ -52,10 +61,40 @@ void prettyHex(unsigned char *buf, int len)
     }
     printf("%02X]", buf[len - 1]);
 }
+// Function to reverse the bits of an 8-bit unsigned char
+unsigned char _reverse_bits(unsigned char byte) {
+    byte = ((byte & 0xF0) >> 4) | ((byte & 0x0F) << 4);    // Swap nibbles
+    byte = ((byte & 0xCC) >> 2) | ((byte & 0x33) << 2);    // Swap pairs of bits
+    byte = ((byte & 0xAA) >> 1) | ((byte & 0x55) << 1);    // Swap individual bits
+    return byte;
+}
 
+uint32_t decode_difficulty(const unsigned char *job_difficulty_mask) {
+    uint32_t decoded_difficulty = 0;
 
+    // job_difficulty_mask[2] contains the reversed bits of the MSB
+    // job_difficulty_mask[3] contains the reversed bits of the next byte
+    // job_difficulty_mask[4] contains the reversed bits of the next byte
+    // job_difficulty_mask[5] contains the reversed bits of the LSB
 
-static void echo_task(void *arg) {
+    for (int i = 0; i < 4; i++) {
+        // Reverse bits again to get original byte
+        unsigned char reversed_val = _reverse_bits(job_difficulty_mask[2 + i]);
+
+        // Now place it back into the integer in the correct order:
+        // i=0 -> MSB, i=3 -> LSB
+        decoded_difficulty |= ((uint32_t)reversed_val << (8 * (3 - i)));
+    }
+
+    return decoded_difficulty;
+}
+
+static const char *TAG = "MAIN";
+
+QueueHandle_t work_queue;
+uint32_t target_difficulty;
+
+static void receive_task(void *arg) {
    
 
     const uart_config_t uart_config = {
@@ -78,6 +117,7 @@ static void echo_task(void *arg) {
         int len = uart_read_bytes(UART_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
 
         if (len) {
+            printf("Received %d bytes\n", len);
             printf("message: ");
             prettyHex((unsigned char *)data, len);
 
@@ -102,20 +142,69 @@ static void echo_task(void *arg) {
 
             if (header == 0x21) {
                 ESP_LOGI("PARSE", "Job packet");
-            
+                unsigned char length = data[3];
+                ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
+
+                int data_len = length - 6;
+                ESP_LOGI("PARSE", "data_len: %d", data_len);
+
+                int work_id = data[4];
+                ESP_LOGI("PARSE", "work_id: %02X", (unsigned char)work_id);
+
+                int num_midstates = data[5];
+                ESP_LOGI("PARSE", "num_midstates: %02X", (unsigned char)num_midstates);
+
+                unsigned char *block_header = (uint8_t *)malloc(data_len);
+                memcpy(block_header, data + 6, data_len);
+
+                printf("block header: ");
+                prettyHex((unsigned char *)block_header, data_len);
+
+                if (xQueueSend(work_queue, &block_header, portMAX_DELAY) != pdPASS) {
+                    printf("Failed to send block header to queue!\n");
+                }
+            }else if (header == 0x51) {
+                ESP_LOGI("PARSE", "Command packet");
+
+                // Extract length and data
+                unsigned char length = data[3];
+                ESP_LOGI("PARSE", "length: %02X", (unsigned char)length);
+
+                int data_len = length - 5;  // Account for CRC5
+                ESP_LOGI("PARSE", "data_len: %d", data_len);
+
+                // Handle CRC5 (last byte)
+                uint8_t received_crc5 = data[4 + data_len];
+                ESP_LOGI("PARSE", "Received CRC5: %02X", received_crc5);
+
+                // Extract the message mask (last 6 bytes before CRC5)
+                unsigned char *message = (unsigned char *)(data + length - 5);
+      
+                prettyHex(message, 6);
+
+                // Extract the padding byte and TICKET_MASK (last two bytes after the difficulty mask)
+                unsigned char padding_byte = message[0];
+                unsigned char mask = message[1];
+                ESP_LOGI("PARSE", "Padding byte: %02X", padding_byte);
+                ESP_LOGI("PARSE", "MASK: %02X", mask);
+
+                if (mask == TICKET_MASK) {
+                    target_difficulty = decode_difficulty(message);
+                    // Log the decoded difficulty
+                    ESP_LOGI("PARSE", "Decoded difficulty: %lu", target_difficulty);
+                } else {
+                    ESP_LOGW("PARSE", "Unknown mask");
+                    continue;
+                }
+
+                
+
+            // Use the decoded difficulty value
+            // You can process the difficulty or take further actions here
             } else {
                 ESP_LOGW("PARSE", "Unknown packet type");
-                return;
+                continue;
             }
-
-            unsigned char length = data[3];
-
-            int data_len = (header & TYPE_JOB) ? (length - 6) : (length - 5); // Exclude CRC size
-
-            unsigned char *block_header = (uint8_t *)malloc(data_len);
-            memcpy(block_header, data + 4, data_len);
-
-            make_hash(block_header);
         }
     }
 }
@@ -123,5 +212,11 @@ static void echo_task(void *arg) {
 void app_main(void)
 {
     ESP_LOGI("main", "Hello, world!");
-    xTaskCreate(echo_task, "uart_echo_task", 2048, NULL, 10, NULL);
+    work_queue = xQueueCreate(10, sizeof(uint8_t *));
+    if (work_queue == NULL) {
+        printf("Failed to create queue!\n");
+        return;
+    }
+    xTaskCreate(receive_task, "receive_task", 4096, NULL, 10, NULL);
+    xTaskCreate(mine_block_task, "mine_block_task", 4096, NULL, 10, NULL);
 }
