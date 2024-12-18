@@ -37,13 +37,17 @@ int is_valid_hash_32(const uint8_t hash[32], uint32_t target) {
     return (hash_val <= target) ? 1 : 0;
 }
 // Mine the block with a 32-bit difficulty target
-uint32_t mine_block(uint8_t block_header[80], uint32_t target_int) {
+uint32_t mine_block(uint8_t block_header[80]) {
     uint8_t hash[32];
     uint32_t nonce = 0;
 
     printf("Starting mining...\n");
     for (nonce = 0; nonce <= 0xFFFFFFFF; nonce++) {
-        printf("Trying nonce: %lu\n", (unsigned long)nonce);
+        // show every 1000000 nonce
+        if (nonce % 10000 == 0){
+            printf("Trying nonce: %lu\n", (unsigned long)nonce);
+            vTaskDelay(pdMS_TO_TICKS(10)); // Yield time to other tasks
+        }
 
         // Update nonce in the block header (last 4 bytes)
         block_header[76] = (nonce & 0x000000FF);
@@ -55,7 +59,7 @@ uint32_t mine_block(uint8_t block_header[80], uint32_t target_int) {
         double_sha256(block_header, 80, hash);
 
         // Check if the hash meets the target
-        if (is_valid_hash_32(hash, target_int)) {
+        if (is_valid_hash_32(hash, target_difficulty)) {
             printf("Valid nonce found: %lu\n", (unsigned long)nonce);
             printf("Hash: ");
             for (int i = 0; i < 32; i++) printf("%02x", hash[i]);
@@ -73,12 +77,11 @@ void mine_block_task(void *pvParameters) {
 
     // Example: Convert '00 00 80 FF' to big-endian target. 
     // If given in little-endian, '00 00 80 FF' = 'FF800000' big-endian.
-    uint32_t target_int = 0xFF800000;
 
     while (true) {
         if (xQueueReceive(work_queue, &block_header, portMAX_DELAY) == pdPASS) {
             // Mine the block with the 32-bit target
-            uint32_t nonce = mine_block(block_header, target_int);
+            uint32_t nonce = mine_block(block_header);
             free(block_header);
             if (nonce == 0) {
                 ESP_LOGE(TAG, "No valid nonce found.");
