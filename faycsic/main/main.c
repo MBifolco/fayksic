@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "esp_log.h"
-
+#include "globals.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <freertos/queue.h>
@@ -69,9 +69,32 @@ unsigned char _reverse_bits(unsigned char byte) {
     return byte;
 }
 
+uint32_t decode_difficulty(const unsigned char *job_difficulty_mask) {
+    uint32_t decoded_difficulty = 0;
+
+    // job_difficulty_mask[2] contains the reversed bits of the MSB
+    // job_difficulty_mask[3] contains the reversed bits of the next byte
+    // job_difficulty_mask[4] contains the reversed bits of the next byte
+    // job_difficulty_mask[5] contains the reversed bits of the LSB
+
+    for (int i = 0; i < 4; i++) {
+        // Reverse bits again to get original byte
+        unsigned char reversed_val = _reverse_bits(job_difficulty_mask[2 + i]);
+
+        // Now place it back into the integer in the correct order:
+        // i=0 -> MSB, i=3 -> LSB
+        decoded_difficulty |= ((uint32_t)reversed_val << (8 * (3 - i)));
+    }
+
+    return decoded_difficulty;
+}
+
 static const char *TAG = "MAIN";
 
-static void echo_task(void *arg) {
+QueueHandle_t work_queue;
+uint32_t target_difficulty;
+
+static void receive_task(void *arg) {
    
 
     const uart_config_t uart_config = {
@@ -135,9 +158,11 @@ static void echo_task(void *arg) {
                 memcpy(block_header, data + 6, data_len);
 
                 printf("block header: ");
-                prettyHex((unsigned char *)block_header, 80);
+                prettyHex((unsigned char *)block_header, data_len);
 
-                make_hash(block_header);
+                if (xQueueSend(work_queue, &block_header, portMAX_DELAY) != pdPASS) {
+                    printf("Failed to send block header to queue!\n");
+                }
             }else if (header == 0x51) {
                 ESP_LOGI("PARSE", "Command packet");
 
@@ -154,7 +179,7 @@ static void echo_task(void *arg) {
 
                 // Extract the message mask (last 6 bytes before CRC5)
                 unsigned char *message = (unsigned char *)(data + length - 5);
-                ESP_LOGI("Mask: ");
+      
                 prettyHex(message, 6);
 
                 // Extract the padding byte and TICKET_MASK (last two bytes after the difficulty mask)
@@ -164,19 +189,12 @@ static void echo_task(void *arg) {
                 ESP_LOGI("PARSE", "MASK: %02X", mask);
 
                 if (mask == TICKET_MASK) {
-                    ESP_LOGI("PARSE", "this is a set difficulty command");
-                    // Decode the difficulty value from the mask
-                    uint32_t decoded_difficulty = 0;
-                    for (int i = 0; i < 4; i++) {
-                        unsigned char value = message[5 - i];  // Reverse byte order
-                        decoded_difficulty |= (_reverse_bits(value) << (8 * i));
-                    }
-
+                    target_difficulty = decode_difficulty(message);
                     // Log the decoded difficulty
-                    ESP_LOGI("PARSE", "Decoded difficulty: %lu", decoded_difficulty);
+                    ESP_LOGI("PARSE", "Decoded difficulty: %lu", target_difficulty);
                 } else {
                     ESP_LOGW("PARSE", "Unknown mask");
-                    return;
+                    continue;
                 }
 
                 
@@ -185,10 +203,8 @@ static void echo_task(void *arg) {
             // You can process the difficulty or take further actions here
             } else {
                 ESP_LOGW("PARSE", "Unknown packet type");
-                return;
+                continue;
             }
-
-            
         }
     }
 }
@@ -196,30 +212,11 @@ static void echo_task(void *arg) {
 void app_main(void)
 {
     ESP_LOGI("main", "Hello, world!");
-    xTaskCreate(echo_task, "uart_echo_task", 2048, NULL, 10, NULL);
-}
-
-
-
-void parse_job_difficulty_mask(const unsigned char *payload) {
-    // Assuming payload starts after the preamble and command header
-    const unsigned char *job_difficulty_mask = payload;
-
-    // Verify the mask length
-    if (job_difficulty_mask == NULL) {
-        ESP_LOGE(TAG, "Invalid payload: NULL job difficulty mask");
+    work_queue = xQueueCreate(10, sizeof(uint8_t *));
+    if (work_queue == NULL) {
+        printf("Failed to create queue!\n");
         return;
     }
-
-    // Extract and reconstruct the difficulty value
-    uint32_t difficulty = 0;
-    for (int i = 0; i < 4; i++) {
-        unsigned char reversed_byte = _reverse_bits(job_difficulty_mask[5 - i]);
-        difficulty |= (reversed_byte << (8 * i));
-    }
-
-    // Log the parsed difficulty
-    ESP_LOGI(TAG, "Parsed job difficulty mask: %lu", difficulty);
-
-    // Additional validation or processing if needed
+    xTaskCreate(receive_task, "receive_task", 4096, NULL, 10, NULL);
+    xTaskCreate(mine_block_task, "mine_block_task", 4096, NULL, 10, NULL);
 }

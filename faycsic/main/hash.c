@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "mbedtls/sha256.h"
-
+#include "globals.h"
 #include "esp_log.h"
 
 static const char *TAG = "HASH";
@@ -26,44 +26,25 @@ void double_sha256(unsigned char *input, size_t len, uint8_t output[32]) {
     mbedtls_sha256(temp, 32, output, 0);
 }
 
-void make_hash(uint8_t block_header[80]) {
-    unsigned char *block_hash = malloc(32);
-    if (!block_hash) {
-        ESP_LOGE(TAG, "Failed to allocate memory for block_hash");
-        return;
-    }
-
-    double_sha256(block_header, 80, block_hash);
-
-    char *hex_output = malloc(32 * 2);  // +1 for null terminator
-    if (!hex_output) {
-        ESP_LOGE(TAG, "Failed to allocate memory for hex_output");
-        free(block_hash);
-        return;
-    }
-
-    to_hex_string(block_hash, hex_output, 32);
-    printf("Result Hash: %s\n", hex_output);
-
-    free(block_hash);
-    free(hex_output);
+// Compare the first 4 bytes of the hash (big-endian) to a 32-bit target.
+// Return 1 if hash <= target, else 0.
+int is_valid_hash_32(const uint8_t hash[32], uint32_t target) {
+    // Interpret the first 4 bytes of 'hash' as a 32-bit big-endian integer
+    uint32_t hash_val = ((uint32_t)hash[0] << 24) |
+                        ((uint32_t)hash[1] << 16) |
+                        ((uint32_t)hash[2] << 8)  |
+                        ((uint32_t)hash[3]);
+    return (hash_val <= target) ? 1 : 0;
 }
-
-// Helper function to compare a hash with the target
-int is_valid_hash(const uint8_t hash[32], const uint8_t target[32]) {
-    for (int i = 0; i < 32; i++) {
-        if (hash[i] < target[i]) return 1;  // Hash is smaller than target
-        if (hash[i] > target[i]) return 0;  // Hash is larger than target
-    }
-    return 1;  // Hash is equal to target
-}
-
-uint32_t mine_block(uint8_t block_header[80], const uint8_t target[32]) {
+// Mine the block with a 32-bit difficulty target
+uint32_t mine_block(uint8_t block_header[80], uint32_t target_int) {
     uint8_t hash[32];
     uint32_t nonce = 0;
 
     printf("Starting mining...\n");
     for (nonce = 0; nonce <= 0xFFFFFFFF; nonce++) {
+        printf("Trying nonce: %lu\n", (unsigned long)nonce);
+
         // Update nonce in the block header (last 4 bytes)
         block_header[76] = (nonce & 0x000000FF);
         block_header[77] = (nonce & 0x0000FF00) >> 8;
@@ -74,8 +55,8 @@ uint32_t mine_block(uint8_t block_header[80], const uint8_t target[32]) {
         double_sha256(block_header, 80, hash);
 
         // Check if the hash meets the target
-        if (is_valid_hash(hash, target)) {
-            printf("Valid nonce found: %lu\n", nonce);
+        if (is_valid_hash_32(hash, target_int)) {
+            printf("Valid nonce found: %lu\n", (unsigned long)nonce);
             printf("Hash: ");
             for (int i = 0; i < 32; i++) printf("%02x", hash[i]);
             printf("\n");
@@ -87,4 +68,28 @@ uint32_t mine_block(uint8_t block_header[80], const uint8_t target[32]) {
     return 0;
 }
 
+void mine_block_task(void *pvParameters) {
+   uint8_t *block_header;
 
+    // Example: Convert '00 00 80 FF' to big-endian target. 
+    // If given in little-endian, '00 00 80 FF' = 'FF800000' big-endian.
+    uint32_t target_int = 0xFF800000;
+
+    while (true) {
+        if (xQueueReceive(work_queue, &block_header, portMAX_DELAY) == pdPASS) {
+            // Mine the block with the 32-bit target
+            uint32_t nonce = mine_block(block_header, target_int);
+            free(block_header);
+            if (nonce == 0) {
+                ESP_LOGE(TAG, "No valid nonce found.");
+            }
+        } else {
+            ESP_LOGW(TAG, "Failed to receive job from the queue");
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
+        // Yield to let other tasks run
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
