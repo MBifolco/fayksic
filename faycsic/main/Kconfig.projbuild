@@ -1,0 +1,6 @@
+menu "Testing Configuration"
+    config MOCK_MESSAGES
+        bool "Use mock messages sent to fayksic"
+        help
+            Mock commands and jobs with will known signals to fakysic.
+endmenu
