@@ -92,7 +92,7 @@ uint32_t decode_difficulty(const unsigned char *job_difficulty_mask) {
 }
 
 QueueHandle_t work_queue;
-uint32_t target_difficulty;
+uint32_t target_difficulty[2]; // TODO: rename - TARGET_MASK
 
 static void receive_task(void *arg) {
 
@@ -124,13 +124,13 @@ static void receive_task(void *arg) {
 
             if (len < 4) {
                 ESP_LOGW(PARSE_TAG, "Packet too short");
-                return;
+                continue;
             }
 
             // Validate preamble
             if (data[0] != 0x55 || data[1] != 0xAA) {
                 ESP_LOGW(PARSE_TAG, "Invalid preamble");
-                return;
+                continue;
             } else {
                 ESP_LOGI(PARSE_TAG, "Preamble OK");
             }
@@ -168,31 +168,31 @@ static void receive_task(void *arg) {
                 ESP_LOGI(PARSE_TAG, "Command packet");
 
                 // Extract length and data
-                unsigned char length = data[3];
-                ESP_LOGI(PARSE_TAG, "   length: %02X", (unsigned char)length);
+                uint8_t length = (uint8_t)data[3];
+                ESP_LOGI(PARSE_TAG, "   total length: %d", length);
 
                 int data_len = length - 5; // Account for CRC5
                 ESP_LOGI(PARSE_TAG, "   data_len: %d", data_len);
 
                 // Handle CRC5 (last byte)
-                uint8_t received_crc5 = data[4 + data_len];
+                uint8_t received_crc5 = data[length + 1]; // Length does not include preamble bytes
                 ESP_LOGI(PARSE_TAG, "   received_crc5: %02X", received_crc5);
 
-                // Extract the message mask (last 6 bytes before CRC5)
-                unsigned char *message = (unsigned char *)(data + length - 5);
-                prettyHex(message, 6);
-                printf("\n");
-
-                // Extract the padding byte and TICKET_MASK (last two bytes after the difficulty mask)
-                unsigned char padding_byte = message[0];
-                unsigned char mask = message[1];
-                ESP_LOGI(PARSE_TAG, "   Padding byte: %02X", padding_byte);
+                // Extract the message mask (2 bytes preamble + 2 bytes header + 2 bytes has mask)
+                unsigned char mask = *(data + 5);
                 ESP_LOGI(PARSE_TAG, "   MASK: %02X", mask);
 
                 if (mask == TICKET_MASK) {
-                    target_difficulty = decode_difficulty(message);
-                    // Log the decoded difficulty
-                    ESP_LOGI(PARSE_TAG, "Decoded difficulty: %lu", target_difficulty);
+                    target_difficulty[0] |= (uint32_t)(*(data + 6)) << 24;
+                    target_difficulty[0] |= (uint32_t)(*(data + 7)) << 16;
+                    target_difficulty[0] |= (uint32_t)(*(data + 8)) << 8;
+                    target_difficulty[0] |= (uint32_t)(*(data + 9));
+
+                    target_difficulty[1] |= (uint32_t)(*(data + 10)) << 24;
+                    target_difficulty[1] |= (uint32_t)(*(data + 11)) << 16;
+                    target_difficulty[1] |= (uint32_t)(*(data + 12)) << 8;
+                    target_difficulty[1] |= (uint32_t)(*(data + 13));
+                    ESP_LOGI(PARSE_TAG, "Target mask: 0x%08lx%08lx\n", target_difficulty[0], target_difficulty[1]);
                 } else {
                     ESP_LOGW(PARSE_TAG, "Unknown mask");
                     continue;
@@ -220,17 +220,21 @@ void app_main(void) {
     xTaskCreate(mine_block_task, "mine_block_task", 4096, NULL, 10, NULL);
 
 #if CONFIG_MOCK_MESSAGES
-    target_difficulty = 0xff; // TODO: Is this and should this remain "target_mask" w/out any decoding?
 
-    ESP_LOGI("MAIN", "Sending mock block header");
-    for (int i = 0; i < 80; i++)
-        printf("%02x", MOCK_BLOCK_HEADER[i]);
-    printf("\n");
+    ESP_LOGI("MAIN", "Sending mock ticket mask");
+    uart_set_loop_back(UART_NUM, true);
+    uart_write_bytes(UART_NUM, MOCK_TICKET_MASK, 15);
+    vTaskDelay(pdMS_TO_TICKS(10));
 
-    uint8_t *p_bh = malloc(80);
-    memcpy(p_bh, MOCK_BLOCK_HEADER, 80);
-    if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
-        printf("Failed to send block header to queue!\n");
-    }
+    // ESP_LOGI("MAIN", "Sending mock block header");
+    // for (int i = 0; i < 80; i++)
+    //     printf("%02x", MOCK_BLOCK_HEADER[i]);
+    // printf("\n");
+
+    // uint8_t *p_bh = malloc(80);
+    // memcpy(p_bh, MOCK_BLOCK_HEADER, 80);
+    // if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
+    //     printf("Failed to send block header to queue!\n");
+    // }
 #endif
 }

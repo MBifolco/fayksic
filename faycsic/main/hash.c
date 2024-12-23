@@ -44,7 +44,7 @@ uint32_t mine_block(uint8_t block_header[80]) {
     printf("\n");
 
     ESP_LOGI(TAG, "Starting mining");
-    ESP_LOGI(TAG, "Target diff: 0x%02lx\n", target_difficulty);
+    // ESP_LOGI(TAG, "Target diff: 0x%02lx\n", target_difficulty);
     for (nonce = 0x10572B00; nonce <= 0xFFFFFFFF; nonce++) {
         // show every 1000000 nonce
         if (nonce % 10000 == 0 && nonce > 0) {
@@ -73,14 +73,14 @@ uint32_t mine_block(uint8_t block_header[80]) {
         }
 
         // Check if the hash meets the target
-        if (is_valid_hash_32(hash, target_difficulty)) {
-            printf("\nValid nonce found: %lu\n", (unsigned long)nonce);
-            printf("Hash: ");
-            for (int i = 0; i < 32; i++)
-                printf("%02x", hash[i]);
-            printf("\n");
-            // return nonce;
-        }
+        // if (is_valid_hash_32(hash, target_difficulty)) {
+        //     printf("\nValid nonce found: %lu\n", (unsigned long)nonce);
+        //     printf("Hash: ");
+        //     for (int i = 0; i < 32; i++)
+        //         printf("%02x", hash[i]);
+        //     printf("\n");
+        //     // return nonce;
+        // }
     }
 
     printf("Nonce space exhausted, no valid hash found.\n");
