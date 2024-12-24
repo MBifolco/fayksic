@@ -5,5 +5,5 @@
 #include "freertos/queue.h"
 
 extern QueueHandle_t work_queue;
-extern uint32_t target_difficulty;
+extern uint32_t target_difficulty[2];
 #endif
