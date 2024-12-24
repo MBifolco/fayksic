@@ -92,7 +92,7 @@ uint32_t decode_difficulty(const unsigned char *job_difficulty_mask) {
 }
 
 QueueHandle_t work_queue;
-uint32_t target_difficulty[2]; // TODO: rename - TARGET_MASK
+uint32_t target_difficulty[2]; // TODO: rename - TARGET_MASK & set default value...
 
 static void receive_task(void *arg) {
 
@@ -224,17 +224,19 @@ void app_main(void) {
     ESP_LOGI("MAIN", "Sending mock ticket mask");
     uart_set_loop_back(UART_NUM, true);
     uart_write_bytes(UART_NUM, MOCK_TICKET_MASK, 15);
-    vTaskDelay(pdMS_TO_TICKS(10));
 
-    // ESP_LOGI("MAIN", "Sending mock block header");
+    // Add a delay so mask can actually get set
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    ESP_LOGI("MAIN", "Sending mock block header");
     // for (int i = 0; i < 80; i++)
     //     printf("%02x", MOCK_BLOCK_HEADER[i]);
     // printf("\n");
 
-    // uint8_t *p_bh = malloc(80);
-    // memcpy(p_bh, MOCK_BLOCK_HEADER, 80);
-    // if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
-    //     printf("Failed to send block header to queue!\n");
-    // }
+    uint8_t *p_bh = malloc(80);
+    memcpy(p_bh, MOCK_BLOCK_HEADER, 80);
+    if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
+        printf("Failed to send block header to queue!\n");
+    }
 #endif
 }
