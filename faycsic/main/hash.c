@@ -66,6 +66,10 @@ uint32_t mine_block(uint8_t block_header[80]) {
             vTaskDelay(pdMS_TO_TICKS(10)); // Yield time to other tasks
         }
 
+        if (nonce % 500000 == 0 && nonce > 0) {
+            ESP_LOGI(TAG, "At nonce %ld (0x%08lx)", nonce, nonce);
+        }
+
         // Update nonce in the block header (last 4 bytes)
         // 0x 0f 2b 57 10
         block_header[76] = (nonce & 0x000000FF);
