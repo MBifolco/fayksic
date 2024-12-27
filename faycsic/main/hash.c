@@ -8,7 +8,7 @@
 static const char *TAG = "HASH";
 
 // Convert a byte array to a hex string for readability (optional)
-void to_hex_string(unsigned char *input, char *output, int len) {
+void to_hex_string(uint8_t *input, char *output, int len) {
     for (int i = 0; i < len; i++) {
         sprintf(output + (i * 2), "%02x", input[i]);
     }
@@ -28,11 +28,26 @@ void double_sha256(unsigned char *input, size_t len, uint8_t output[32]) {
 
 // Compare the first 4 bytes of the hash (big-endian) to a 32-bit target.
 // Return 1 if hash <= target, else 0.
-int is_valid_hash_32(const uint8_t hash[32], uint32_t target) {
-    // Interpret the first 4 bytes of 'hash' as a 32-bit big-endian integer
-    uint32_t hash_val = ((uint32_t)hash[0] << 24) | ((uint32_t)hash[1] << 16) | ((uint32_t)hash[2] << 8) | ((uint32_t)hash[3]);
-    return (hash_val <= target) ? 1 : 0;
+int is_valid_hash_32(const uint8_t hash[32]) {
+    // Flip the hash bytes around to conform to what our target mask lloks like
+    // TODO: Verify with a real ASIC this is indeed the correct ordering
+    uint32_t high = ((uint32_t)hash[31] << 24) | ((uint32_t)hash[30] << 16) | ((uint32_t)hash[29] << 8) | ((uint32_t)hash[28]);
+    uint32_t low = ((uint32_t)hash[27] << 24) | ((uint32_t)hash[26] << 16) | ((uint32_t)hash[25] << 8) | ((uint32_t)hash[24]);
+
+    // ESP_LOGI(TAG, "Hash:\t0x%08lx%08lx", high, low);
+    // ESP_LOGI(TAG, "Mask:\t0x%08lx%08lx", target_difficulty[0], target_difficulty[1]);
+    // ESP_LOGI(TAG, "high <=? m[0]: %d", high < target_difficulty[0]);
+    // ESP_LOGI(TAG, "low <=? m[1]: %d", low < target_difficulty[1]);
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    if (high > target_difficulty[0]) {
+        return 0;
+    }
+    if (high == target_difficulty[0] && low > target_difficulty[1]) {
+        return 0;
+    }
+    return 1;
 }
+
 // Mine the block with a 32-bit difficulty target
 uint32_t mine_block(uint8_t block_header[80]) {
     uint8_t hash[32];
@@ -44,18 +59,15 @@ uint32_t mine_block(uint8_t block_header[80]) {
     printf("\n");
 
     ESP_LOGI(TAG, "Starting mining");
-    ESP_LOGI(TAG, "Target diff: 0x%02lx\n", target_difficulty);
-    for (nonce = 0x10572B00; nonce <= 0xFFFFFFFF; nonce++) {
-        // show every 1000000 nonce
+    // Start here for block 100,000 to quickly produced the block 100,000 hash
+    // for (nonce = 0x10572B00; nonce <= 0xFFFFFFFF; nonce++) {
+    for (nonce = 0; nonce <= 0xFFFFFFFF; nonce++) {
         if (nonce % 10000 == 0 && nonce > 0) {
-            // printf("Trying nonce: %lu\n", (unsigned long)nonce);
-            printf(".");
-            fflush(stdout);
             vTaskDelay(pdMS_TO_TICKS(10)); // Yield time to other tasks
         }
+
         if (nonce % 500000 == 0 && nonce > 0) {
-            printf(" (%ld) (0x%02lx)", nonce, nonce);
-            printf("\n");
+            ESP_LOGI(TAG, "At nonce %ld (0x%08lx)", nonce, nonce);
         }
 
         // Update nonce in the block header (last 4 bytes)
@@ -67,23 +79,18 @@ uint32_t mine_block(uint8_t block_header[80]) {
 
         // Compute the double SHA-256 hash
         double_sha256(block_header, 80, hash);
-        if (nonce == 0x10572b0f) {
-            for (int i = 0; i < 32; i++)
-                printf("%02x", hash[i]);
-        }
 
         // Check if the hash meets the target
-        if (is_valid_hash_32(hash, target_difficulty)) {
-            printf("\nValid nonce found: %lu\n", (unsigned long)nonce);
-            printf("Hash: ");
-            for (int i = 0; i < 32; i++)
-                printf("%02x", hash[i]);
-            printf("\n");
+        if (is_valid_hash_32(hash)) {
+            char h[65];
+            to_hex_string(hash, h, 32);
+            ESP_LOGI(TAG, "Valid nonce found: 0x%08lx", nonce);
+            ESP_LOGI(TAG, "Produced: %s", h);
             // return nonce;
         }
     }
 
-    printf("Nonce space exhausted, no valid hash found.\n");
+    printf("Nonce space exhausted\n");
     return 0;
 }
 
