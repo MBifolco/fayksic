@@ -1,3 +1,4 @@
+#include "driver/uart.h"
 #include "esp_log.h"
 #include "globals.h"
 #include "mbedtls/sha256.h"
@@ -86,7 +87,14 @@ uint32_t mine_block(uint8_t block_header[80]) {
             to_hex_string(hash, h, 32);
             ESP_LOGI(TAG, "Valid nonce found: 0x%08lx", nonce);
             ESP_LOGI(TAG, "Produced: %s", h);
-            // return nonce;
+
+            uint8_t data[6] = {0xAA, 0x55, block_header[79], block_header[78], block_header[77], block_header[76]};
+            int bytes_written = uart_write_bytes(UART_NUM_1, data, 6);
+            if (bytes_written < 0) {
+                ESP_LOGE(TAG, "Error writing nonce to UART");
+            } else if (bytes_written != 6) {
+                ESP_LOGW(TAG, "Did not write expected 6 bytes to UART");
+            }
         }
     }
 

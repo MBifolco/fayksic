@@ -96,19 +96,7 @@ uint32_t target_difficulty[2]; // TODO: rename - TARGET_MASK & set default value
 
 static void receive_task(void *arg) {
 
-    const uart_config_t uart_config = {
-        .baud_rate = 115200,           // Baud rate
-        .data_bits = UART_DATA_8_BITS, // Data bits
-        .parity = UART_PARITY_DISABLE, // No parity
-        .stop_bits = UART_STOP_BITS_1, // 1 stop bit
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    };
-
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_LOGI(TAG, "UART configured");
-
+    // TODO: Why don't we just make `data` uint8_t?
     unsigned char *data = malloc(BUF_SIZE);
     const char *PARSE_TAG = "PARSE";
 
@@ -210,7 +198,20 @@ static void receive_task(void *arg) {
 
 void app_main(void) {
     setvbuf(stdout, NULL, _IONBF, 0); // Disable buffering for stdout
-    ESP_LOGI("MAIN", "Hello, world!");
+
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,           // Baud rate
+        .data_bits = UART_DATA_8_BITS, // Data bits
+        .parity = UART_PARITY_DISABLE, // No parity
+        .stop_bits = UART_STOP_BITS_1, // 1 stop bit
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_LOGI("MAIN", "UART configured");
+
     work_queue = xQueueCreate(10, sizeof(uint8_t *));
     if (work_queue == NULL) {
         printf("Failed to create queue!\n");
