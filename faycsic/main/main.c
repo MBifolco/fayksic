@@ -210,7 +210,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_LOGI("MAIN", "UART configured");
+    ESP_LOGI(TAG, "UART configured");
 
     work_queue = xQueueCreate(10, sizeof(uint8_t *));
     if (work_queue == NULL) {
