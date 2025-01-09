@@ -1,6 +1,6 @@
 #include "driver/uart.h"
 #include "esp_log.h"
-#include "globals.h"
+#include "main.h"
 #include "mbedtls/sha256.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -36,14 +36,14 @@ int is_valid_hash_32(const uint8_t hash[32]) {
     uint32_t low = ((uint32_t)hash[27] << 24) | ((uint32_t)hash[26] << 16) | ((uint32_t)hash[25] << 8) | ((uint32_t)hash[24]);
 
     // ESP_LOGI(TAG, "Hash:\t0x%08lx%08lx", high, low);
-    // ESP_LOGI(TAG, "Mask:\t0x%08lx%08lx", target_difficulty[0], target_difficulty[1]);
-    // ESP_LOGI(TAG, "high <=? m[0]: %d", high < target_difficulty[0]);
-    // ESP_LOGI(TAG, "low <=? m[1]: %d", low < target_difficulty[1]);
+    // ESP_LOGI(TAG, "Mask:\t0x%08lx%08lx", TARGET_MASK[0], TARGET_MASK[1]);
+    // ESP_LOGI(TAG, "high <=? m[0]: %d", high < TARGET_MASK[0]);
+    // ESP_LOGI(TAG, "low <=? m[1]: %d", low < TARGET_MASK[1]);
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    if (high > target_difficulty[0]) {
+    if (high > TARGET_MASK[0]) {
         return 0;
     }
-    if (high == target_difficulty[0] && low > target_difficulty[1]) {
+    if (high == TARGET_MASK[0] && low > TARGET_MASK[1]) {
         return 0;
     }
     return 1;
