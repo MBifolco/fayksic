@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define RESP_SIZE 11
+
 static const char *TAG = "HASH";
 
 // Convert a byte array to a hex string for readability (optional)
@@ -60,7 +62,7 @@ uint32_t mine_block(uint8_t block_header[80]) {
     printf("\n");
 
     ESP_LOGI(TAG, "Starting mining");
-    // Start here for block 100,000 to quickly produced the block 100,000 hash
+    // Start here for block 100,000 to quickly produce the block 100,000 hash
     // for (nonce = 0x10572B00; nonce <= 0xFFFFFFFF; nonce++) {
     for (nonce = 0; nonce <= 0xFFFFFFFF; nonce++) {
         if (nonce % 10000 == 0 && nonce > 0) {
@@ -88,11 +90,11 @@ uint32_t mine_block(uint8_t block_header[80]) {
             ESP_LOGI(TAG, "Valid nonce found: 0x%08lx", nonce);
             ESP_LOGI(TAG, "Produced: %s", h);
 
-            uint8_t data[6] = {0xAA, 0x55, block_header[79], block_header[78], block_header[77], block_header[76]};
-            int bytes_written = uart_write_bytes(UART_NUM_1, data, 6);
+            uint8_t data[RESP_SIZE] = {0xAA, 0x55, block_header[79], block_header[78], block_header[77], block_header[76], 0, 0, 0, 0, 0};
+            int bytes_written = uart_write_bytes(UART_NUM_1, data, RESP_SIZE);
             if (bytes_written < 0) {
                 ESP_LOGE(TAG, "Error writing nonce to UART");
-            } else if (bytes_written != 6) {
+            } else if (bytes_written != RESP_SIZE) {
                 ESP_LOGW(TAG, "Did not write expected 6 bytes to UART");
             }
         }
