@@ -20,9 +20,8 @@
 #define TX_PIN 13           // GPIO pin for UART TX
 
 static const char *TAG = "MAIN";
-
-QueueHandle_t work_queue;
 uint32_t TARGET_MASK[2];
+struct mine_block_task_params_t TASK_PARAMS[CONFIG_MOCK_NUM_CORES];
 
 void app_main(void) {
     const uart_config_t uart_config = {
@@ -38,13 +37,31 @@ void app_main(void) {
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_LOGI(TAG, "UART configured");
 
-    work_queue = xQueueCreate(10, sizeof(uint8_t *));
-    if (work_queue == NULL) {
-        printf("Failed to create queue!\n");
-        return;
-    }
+    uint32_t range_per_task = 0xFFFFFFFF / CONFIG_MOCK_NUM_CORES;
     xTaskCreate(receive_task, "receive_task", 4096, NULL, 10, NULL);
-    xTaskCreate(mine_block_task, "mine_block_task", 4096, NULL, 10, NULL);
+    for (uint32_t i = 0; i < CONFIG_MOCK_NUM_CORES; i++) {
+        // TODO: Tasks need to delete their work_queues on exit
+        QueueHandle_t task_work_queue = xQueueCreate(2, sizeof(uint8_t *));
+        if (task_work_queue == NULL) {
+            // TODO: Need to delete previous `task_work_queues`
+            ESP_LOGE(TAG, "Failed to allocate task_work_queue[%lu] - exiting...", i);
+            return;
+        }
+
+        TASK_PARAMS[i].task_id = i;
+        TASK_PARAMS[i].work_queue = task_work_queue;
+        TASK_PARAMS[i].nonce_range_start = i * range_per_task;
+        if (i == CONFIG_MOCK_NUM_CORES - 1) {
+            TASK_PARAMS[i].nonce_range_end = 0xFFFFFFFF;
+        } else {
+            // It's an inclusive range so, we must always do `for(i = start; i <= end; i++)`
+            TASK_PARAMS[i].nonce_range_end = (i + 1) * range_per_task - 1;
+        }
+
+        char task_name[8];
+        snprintf(task_name, sizeof(task_name), "task_%lu", i);
+        xTaskCreate(mine_block_task, task_name, 4096, &TASK_PARAMS[i], 10, NULL);
+    }
 
 #if CONFIG_MOCK_MESSAGES
 
@@ -58,8 +75,8 @@ void app_main(void) {
     uint8_t *p_bh = malloc(80);
     memcpy(p_bh, MOCK_BLOCK_HEADER, 80);
     ESP_LOGI("MAIN", "Sending mock block header");
-    if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
-        printf("Failed to send block header to queue!\n");
-    }
+    // if (xQueueSend(work_queue, &p_bh, portMAX_DELAY) != pdPASS) {
+    //     printf("Failed to send block header to queue!\n");
+    // }
 #endif
 }

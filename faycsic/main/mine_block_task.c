@@ -8,8 +8,6 @@
 
 #define RESP_SIZE 11
 
-static const char *TAG = "HASH";
-
 // Convert a byte array to a hex string for readability (optional)
 void to_hex_string(uint8_t *input, char *output, int len) {
     for (int i = 0; i < len; i++) {
@@ -52,9 +50,11 @@ int is_valid_hash_32(const uint8_t hash[32]) {
 }
 
 // Mine the block with a 32-bit difficulty target
-uint32_t mine_block(uint8_t block_header[80]) {
+uint32_t mine_block(uint8_t block_header[80], struct mine_block_task_params_t *task_params) {
+
     uint8_t hash[32];
-    uint32_t nonce;
+    char TAG[8];
+    snprintf(TAG, sizeof(TAG), "HASH[%lu]", task_params->task_id);
 
     ESP_LOGI(TAG, "Received block header");
     for (int i = 0; i < 80; i++)
@@ -64,13 +64,13 @@ uint32_t mine_block(uint8_t block_header[80]) {
     ESP_LOGI(TAG, "Starting mining");
     // Start here for block 100,000 to quickly produce the block 100,000 hash
     // for (nonce = 0x10572B00; nonce <= 0xFFFFFFFF; nonce++) {
-    for (nonce = 0; nonce <= 0xFFFFFFFF; nonce++) {
-        if (nonce % 10000 == 0 && nonce > 0) {
+    for (uint32_t nonce = task_params->nonce_range_start; nonce <= task_params->nonce_range_end; nonce++) {
+        if (nonce % 5000 == 0 && nonce > 0) {
             vTaskDelay(pdMS_TO_TICKS(10)); // Yield time to other tasks
         }
 
         if (nonce % 500000 == 0 && nonce > 0) {
-            ESP_LOGI(TAG, "At nonce %ld (0x%08lx)", nonce, nonce);
+            ESP_LOGI(TAG, "At nonce %lu (0x%08lx)", nonce, nonce);
         }
 
         // Update nonce in the block header (last 4 bytes)
@@ -107,14 +107,18 @@ uint32_t mine_block(uint8_t block_header[80]) {
 void mine_block_task(void *pvParameters) {
     uint8_t *block_header;
 
+    struct mine_block_task_params_t *task_params = (struct mine_block_task_params_t *)pvParameters;
     // Example: Convert '00 00 80 FF' to big-endian target.
     // If given in little-endian, '00 00 80 FF' = 'FF800000' big-endian.
 
-    ESP_LOGI(TAG, "Task up - waiting for headers");
+    char TAG[8];
+    snprintf(TAG, sizeof(TAG), "HASH[%lu]", task_params->task_id);
+
+    ESP_LOGI(TAG, "Task up, range 0x%lx to 0x%lx - waiting for headers", task_params->nonce_range_start, task_params->nonce_range_end);
     while (true) {
-        if (xQueueReceive(work_queue, &block_header, portMAX_DELAY) == pdPASS) {
+        if (xQueueReceive(task_params->work_queue, &block_header, portMAX_DELAY) == pdPASS) {
             // Mine the block with the 32-bit target
-            uint32_t nonce = mine_block(block_header);
+            uint32_t nonce = mine_block(block_header, task_params);
             free(block_header);
             if (nonce == 0) {
                 ESP_LOGE(TAG, "No valid nonce found.");

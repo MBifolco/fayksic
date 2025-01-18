@@ -74,9 +74,15 @@ void receive_task() {
                     printf("%02x", block_header[i]);
                 printf("\n");
 
-                if (xQueueSend(work_queue, &block_header, portMAX_DELAY) != pdPASS) {
-                    printf("Failed to send block header to queue!\n");
+                for (uint32_t i = 0; i < CONFIG_MOCK_NUM_CORES; i++) {
+                    // TODO: Each task needs to free their copy of the block header
+                    uint8_t *task_block_header = malloc(80);
+                    memcpy(task_block_header, block_header, 80);
+                    if (xQueueSend(TASK_PARAMS[i].work_queue, &task_block_header, portMAX_DELAY) != pdPASS) {
+                        ESP_LOGI(PARSE_TAG, "Failed to send block header to queue [%lu]", i);
+                    }
                 }
+                free(block_header);
             } else if (header == 0x51) {
                 ESP_LOGI(PARSE_TAG, "Command packet");
 

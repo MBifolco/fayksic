@@ -3,4 +3,9 @@ menu "Testing Configuration"
         bool "Use mock messages sent to fayksic"
         help
             Mock commands and jobs with will known signals to fakysic.
+
+    config MOCK_NUM_CORES
+        int "Number of ASIC cores to simulate"
+        range 1 8
+        default 1
 endmenu
